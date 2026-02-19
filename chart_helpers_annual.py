@@ -47,6 +47,32 @@ def apply_layout(fig, title="", height=380):
     return fig
 
 
+def _normalize_datetime_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse mixed datetime formats safely for uploaded Excel/CSV inputs."""
+    out = df.copy()
+
+    parsed = pd.to_datetime(out["datetime"], errors="coerce", format="mixed")
+    # Fallback for day-first records often coming from CZ Excel exports.
+    missing_mask = parsed.isna()
+    if missing_mask.any():
+        parsed_dayfirst = pd.to_datetime(
+            out.loc[missing_mask, "datetime"],
+            errors="coerce",
+            format="mixed",
+            dayfirst=True,
+        )
+        parsed.loc[missing_mask] = parsed_dayfirst
+
+    if parsed.isna().all():
+        raise ValueError(
+            "Sloupec 'datetime' se nepodařilo převést na datum/čas. "
+            "Zkontrolujte prosím formát ve vstupním souboru."
+        )
+
+    out["datetime"] = parsed
+    return out
+
+
 # ══════════════════════════════════════════════
 # ANNUAL OVERVIEW CHARTS
 # ══════════════════════════════════════════════
@@ -56,8 +82,7 @@ def annual_pnl_chart(result_df: pd.DataFrame) -> go.Figure:
     Yearly PnL overview with monthly breakdown.
     Main chart for annual dispatch.
     """
-    df = result_df.copy()
-    df['datetime'] = pd.to_datetime(df['datetime'])
+    df = _normalize_datetime_column(result_df)
     df['month'] = df['datetime'].dt.to_period('M').astype(str)
     
     monthly = df.groupby('month').agg({
@@ -117,8 +142,7 @@ def annual_pnl_chart(result_df: pd.DataFrame) -> go.Figure:
 
 def monthly_production_chart(result_df: pd.DataFrame) -> go.Figure:
     """Monthly heat production breakdown by source."""
-    df = result_df.copy()
-    df['datetime'] = pd.to_datetime(df['datetime'])
+    df = _normalize_datetime_column(result_df)
     df['month'] = df['datetime'].dt.to_period('M').astype(str)
     
     monthly = df.groupby('month').agg({
@@ -169,8 +193,7 @@ def monthly_production_chart(result_df: pd.DataFrame) -> go.Figure:
 
 def ee_revenue_chart(result_df: pd.DataFrame) -> go.Figure:
     """Monthly electricity revenue and volume."""
-    df = result_df.copy()
-    df['datetime'] = pd.to_datetime(df['datetime'])
+    df = _normalize_datetime_column(result_df)
     df['month'] = df['datetime'].dt.to_period('M').astype(str)
     df['ee_revenue'] = df['EE_Sold_Spot_MWh'] * df['EE_price_EUR_MWh']
     
@@ -214,8 +237,7 @@ def ee_revenue_chart(result_df: pd.DataFrame) -> go.Figure:
 
 def kgj_utilization_heatmap(result_df: pd.DataFrame) -> go.Figure:
     """Heatmap of KGJ utilization by day and hour."""
-    df = result_df.copy()
-    df['datetime'] = pd.to_datetime(df['datetime'])
+    df = _normalize_datetime_column(result_df)
     df['date'] = df['datetime'].dt.date
     df['hour'] = df['datetime'].dt.hour
     
@@ -289,8 +311,7 @@ def hourly_profit_distribution(result_df: pd.DataFrame) -> go.Figure:
 
 def forward_ee_price_chart(result_df: pd.DataFrame) -> go.Figure:
     """Forward EE price curve with monthly average."""
-    df = result_df.copy()
-    df['datetime'] = pd.to_datetime(df['datetime'])
+    df = _normalize_datetime_column(result_df)
     df['month'] = df['datetime'].dt.to_period('M').astype(str)
     
     monthly_avg = df.groupby('month')['EE_price_EUR_MWh'].mean().reset_index()
